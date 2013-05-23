@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+
+function __tank_check_show_exists ()
+{
+    if [ -d /mnt/shows/$1 ]; then
+        echo "OK"
+    else
+        echo ""
+    fi
+}
+
+function __tank_entity_type ()
+{
+
+    if [ -d /mnt/shows/$SHOW/sequences/*/$1 ]; then
+        echo "SHOT"
+    elif [ -d /mnt/shows/$SHOW/build/$1 ]; then
+        echo "ASSET"
+    else
+        echo ""
+    fi
+}
+
+function __tank_get_sequence_for_shot ()
+{
+    local file=(/mnt/shows/${SHOW}/sequences/*/$1)
+    local IFS='/'
+    local tokens=($file)
+    echo ${tokens[5]}
+}
+
+function __tank_ps1 ()
+{
+    # Provides a context aware indicator to the prompt
+    if [ -n "$SHOW" ]; then
+        printf " (%s" "${SHOW}"
+        if [ -n "${ENTITY}" ]; then printf  ":%s" "${ENTITY}"; fi
+        printf ")"
+    fi
+}
+
+function __tank_path ()
+{
+    # for each token in the PATH we check to see if it points to the
+    # tank/bin directory for a SHOW. If one is found then it is dropped
+    # from the path. The new tank/bin path is appended to the end of the
+    # PATH.
+
+    (   # subshell to ensure IFS is not being munged
+        IFS=':'; local tokens=($PATH)
+        for P in ${tokens[@]}; do
+            if [[ ! "$P" == /mnt/shows/*/tank* ]]; then  # catch any tank paths
+                printf "%s:" "${P}"
+            fi
+        done    )
+
+    printf "/mnt/shows/%s/tank" "$SHOW"
+}
+
+function __tank_unset_environment ()
+{
+    unset -v SHOW ENTITY ENTITY_TYPE
+    # unset -v SHOT
+    # unset -v ASSET
+
+    # reset the users prompt to how it was before tank was set
+    if [ -n "$USER_PS1" ]; then
+        export PS1=$USER_PS1
+        unset USER_PS1
+    fi
+
+    # return the user to their original directory before tank startup.
+    # @TODO decide if this is really required
+    if [ -n "$USER_DIR" ]; then
+        cd $USER_DIR
+        unset USER_DIR
+    fi
+}
+
+function __tank_set_environment ()
+{
+    # Sets the SHOW/SHOT/ASSET environment variables.
+    # REQUIRED FOR THE REMAINDER OF THE SETUP.
+    #
+    # usage: 'show SHOW' or 'show SHOW SHOT|ASSET'
+    local red='\e[0;31m'
+    local endColor='\e[0m'
+
+    # loop through arguments to set environment until there are no more left
+    # ensure that a shift operation occurs in each branch of the if/else tree
+    until [ -z "$1" ]
+    do
+        DEBUG echo "ARGS [ $@ ]"
+
+        case "$1" in
+            "show")
+                if [ "$(__tank_check_show_exists $2)" == "OK" ]; then
+                    __tank_unset_environment
+                    export SHOW=${2}
+                    shift
+                    shift
+                fi
+                ;;
+            "asset")
+                ;&
+            "shot")
+                if [ "$(__tank_entity_type $2)" == "SHOT" ] || [ "$(__tank_entity_type $2)" == "ASSET" ]; then
+                    export ENTITY=${2}
+                    export ENTITY_TYPE="$(__tank_entity_type $2)"
+                    shift
+                    shift
+                fi
+                ;;
+            *)  # non-keyword argument parsing
+                if [ "$(__tank_check_show_exists $1)" == "OK" ]; then
+                    DEBUG echo -e "Found ${red}$1${endColor} on disk. Setting SHOW."
+                    __tank_unset_environment
+                    export SHOW=${1}
+                    shift
+                elif [ -n "${SHOW}" ]; then
+                    DEBUG echo -e "SHOW ${red}${SHOW}${endColor} is set. Checking if ${red}$1${endColor} is a SHOT or ASSET"
+                    if [ "$(__tank_entity_type $1)" != "" ]; then
+                        DEBUG echo -e "$(__tank_entity_type $1) ${red}$1${endColor} found in ${red}${SHOW}${endColor}"
+                        export ENTITY=${1}
+                        export ENTITY_TYPE="$(__tank_entity_type $1)"
+                        shift
+                    else
+                        printf "${red}%s${endColor} is not a valid Shot or Asset.\n" "$1"
+                        shift
+                    fi
+                else
+                    printf "${red}%s${endColor} is not a valid Show, Shot or Asset name\n" "$1"
+                    shift
+                fi
+                ;;
+        esac
+
+    done
+
+    # update the PATH for the new environment
+    export PATH=$(__tank_path)
+}
+
+function __tank_goto_set_folder ()
+{
+    DEBUG echo "stashing the users current directory"
+    USER_DIR=$PWD
+    if [ -n $ENTITY ]; then
+        if [ "$ENTITY_TYPE" == "SHOT" ]; then
+            DEBUG echo -e "Parent SEQUENCE is $(__tank_get_sequence_for_shot $ENTITY)"
+            cd /mnt/shows/$SHOW/sequences/$(__tank_get_sequence_for_shot $ENTITY)/$ENTITY
+        elif [ "$ENTITY_TYPE" == "ASSET" ]; then
+            cd /mnt/shows/$SHOW/build/$ENTITY
+        fi
+    elif [ -n $SHOW ]; then
+        cd /mnt/shows/$SHOW/
+    fi
+}
+
+function __tank_set_prompt ()
+{
+    if [ -n $SHOWTERM ]; then
+        DEBUG echo "stashing the users current prompt"
+        export USER_PS1=$PS1
+        export PS1='\[\033[32m\]\u@\h\[\033[00m\]: \[\033[37m\]\w\[\033[31m\]$(__tank_ps1)\[\033[00m\]\$ '
+    fi
+}
+
+function __tank_info ()
+{
+    local red='\e[0;31m'
+    local endColor='\e[0m'
+
+     echo -e "##############################################"
+     echo -e "# SHOW        => ${red}${SHOW-not set}${endColor}"
+     echo -e "# SHOT/ASSET  => ${red}${ENTITY-not set}${endColor}"
+     echo -e "# ENTITY_TYPE => ${red}${ENTITY_TYPE-not set}${endColor}"
+     echo -e "##############################################"
+}
+
+function __tank_help ()
+{
+    local bold='\e[1m'
+    local endColor='\e[0m'
+
+    echo -e "The show command can be used to set and unset the environment"
+    echo -e "for the current terminal."
+
+    echo -e "\nAvailable options:\n"
+    echo -e "   unset/clear - clears the terminal of any shot environment settings"
+    echo -e "   info        - print out the current shot info"
+    echo -e "   help        - prints this help message"
+
+    echo -e "\nUsage examples:\n"
+    echo -e "   shows mary             - sets current show to ${bold}mary${endColor}"
+    echo -e "   shows mary 0052CM_0303 - sets current show to ${bold}mary${endColor} and shot"
+    echo -e "                             to ${bold}0052CM_0303${endColor}"
+    echo -e "   shows mary coptercrash - sets current show to ${bold}mary${endColor} and asset"
+    echo -e "                             to ${bold}coptercrash${endColor}"
+    echo -e "   shows clear            "
+    echo -e "   shows info             "
+    echo -e "   shows help             "
+}
+
+

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Apply some nasty bash foo-ism's to set environment variables
+# for the current SHOW as $SHOW. This allows the tank command per show to be
+# located and added to the $PATH.
+
+function DEBUG ()
+{
+    [ -n "$_DEBUG" ] && $@
+}
+
+source /opt/baseblack/shows-shell/1/tank_functions
+
+case "$1" in
+  help)
+      __tank_help
+      ;;
+  info)
+      __tank_info
+      ;;
+  unset)
+      ;&
+  reset)
+      ;&
+  clear)
+      __tank_unset_environment
+      ;;
+  *)
+      if [ $# -lt 1 ]; then
+          __tank_info
+      else
+          __tank_set_environment "$@"
+          __tank_goto_set_folder
+          __tank_set_prompt
+      fi
+      ;;
+esac
