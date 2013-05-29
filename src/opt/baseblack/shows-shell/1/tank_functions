@@ -123,7 +123,7 @@ function __tank_set_environment ()
             "show")
                 if [ "$(__tank_check_show_exists $2)" == "OK" ]; then
                     __tank_unset_environment
-                    export SHOW=${2}
+                    export SHOW=${2%/}
                     shift
                     shift
                 fi
@@ -132,7 +132,7 @@ function __tank_set_environment ()
                 ;&
             "shot")
                 if [ "$(__tank_entity_type $2)" == "SHOT" ] || [ "$(__tank_entity_type $2)" == "ASSET" ]; then
-                    export ENTITY=${2}
+                    export ENTITY=${2%/}
                     export ENTITY_TYPE="$(__tank_entity_type $2)"
                     shift
                     shift
@@ -142,13 +142,13 @@ function __tank_set_environment ()
                 if [ "$(__tank_check_show_exists $1)" == "OK" ]; then
                     DEBUG echo -e "Found ${red}$1${endColor} on disk. Setting SHOW."
                     __tank_unset_environment
-                    export SHOW=${1}
+                    export SHOW=${1%/}
                     shift
                 elif [ -n "${SHOW}" ]; then
                     DEBUG echo -e "SHOW ${red}${SHOW}${endColor} is set. Checking if ${red}$1${endColor} is a SHOT or ASSET"
                     if [ "$(__tank_entity_type $1)" != "" ]; then
                         DEBUG echo -e "$(__tank_entity_type $1) ${red}$1${endColor} found in ${red}${SHOW}${endColor}"
-                        export ENTITY=${1}
+                        export ENTITY=${1%/}
                         export ENTITY_TYPE="$(__tank_entity_type $1)"
                         shift
                     else
